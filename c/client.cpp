@@ -54,6 +54,7 @@ void loginRequest(int sockfd);
 void loginAck(Packet* packet);
 void logoutRequest(int sockfd);
 void logoutAck(Packet* packet);
+void addRequest(int sockfd);
 const char* jsonToChar(const char* inputJson, const char* key, const char* value);
 void charToJson(const char* inputChar, const char* key, std::string* resultValue);
 void sendPacket(int sockfd, int type, char* sender, char* recver, char* message, int code=200);
@@ -155,6 +156,9 @@ void* sendThread(void* sockfd)
 			break;
 		case 3:
 			logoutRequest(*(int*)sockfd);
+			break;
+		case 4:
+			addRequest(*(int*)sockfd);
 			break;
 		default:
 			break;
@@ -275,6 +279,15 @@ void logoutAck(Packet* packet)
 		std::cout << "Logout failed" << std::endl;
 }
 
+void addRequest(int sockfd)
+{
+	char otherID[IDLEN];
+	scanf("%s",otherID);
+	char message[BUFLEN];
+	memset(message,0,BUFLEN);//以0填充
+	sendPacket(sockfd, Logout, userID, otherID, (char*)message);
+}
+
 const char* jsonToChar(const char* inputJson, const char* key, const char* value)
 {
 	nlohmann::json jsonData = nlohmann::json::parse(inputJson);
@@ -307,6 +320,19 @@ void help()
 	printf("Command:\n");
 	printf("\tregis\n");
 	printf("\tlogin\n");
+	printf("\tlogout\n");
+	printf("\tadd\n");
+	printf("\tack\n");
+	printf("\tdel\n");
+	printf("\tbroadcast\n");
+	printf("\tgroup\n");
+	printf("\trenamegroup\n");
+	printf("\tdelgroup\n");
+	printf("\tinvite\n");
+	printf("\tdelmember\n");
+	printf("\tmsg\n");
+	printf("\tgroupmsg\n");
+	printf("\tdate\n");
 }
 
 void pass(){;}

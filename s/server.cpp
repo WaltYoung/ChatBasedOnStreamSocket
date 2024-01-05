@@ -41,12 +41,14 @@ typedef struct {
 }Packet;
 pthread_t thread_do[NUMSERVER];
 pthread_mutex_t A_LOCK=PTHREAD_MUTEX_INITIALIZER;
-std::map<int,char*> maps;
+std::map<int,char*> sockfdToBuf;
+std::map<std::string,int> useridToSockfd;
 char serverID[IDLEN]="1000000";
 void* server(void* sockfd);
 void regisResponce(int sockfd, Packet* packet);
 void loginResponce(int sockfd, Packet* packet);
 void logoutResponce(int sockfd, Packet* packet);
+void addForward(int sockfd, Packet* packet);
 MYSQL* connectMySQL();
 void insertData(MYSQL* con, std::string tableName, std::string columnName,const std::string data);
 
@@ -117,7 +119,7 @@ int main()
 		printf("Got connection from: %s:%d\n",inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port) );
 		pthread_create(&thread_do[i],NULL,server,(void*)&sockfd);
 		char buf[BUFLEN];
-		maps[sockfd]=buf;//以数组方式插入键值对
+		sockfdToBuf[sockfd]=buf;//以数组方式插入键值对
 	}
 	pthread_t thread;
 	pthread_create(&thread,NULL,command,NULL);
@@ -164,6 +166,9 @@ void* server(void* sockfd)
 			break;
 		case 3:
 			logoutResponce(*(int*)sockfd, &packet);
+			break;
+		case 4:
+			addForward(*(int*)sockfd, &packet);
 			break;
 		default:
 			break;
@@ -213,6 +218,7 @@ void loginResponce(int sockfd, Packet* packet)
 	std::string userid="default",password="default";
 	charToJson( (const char*)packet->message, "userid", &userid);
 	charToJson( (const char*)packet->message, "password", &password);
+	useridToSockfd[userid]=sockfd;//套接字与userid绑定
 	std::string columnName="userid, password";
 	std::string tableName="basic";
 	std::vector< std::vector<std::string> > results;
@@ -251,6 +257,9 @@ void logoutResponce(int sockfd, Packet* packet)
 	std::string newData="0";//bool=false
 	updateData( connectMySQL(), tableName, columnName, newData, packet->sender);
 }
+
+void addForward(int sockfd, Packet* packet)
+{}
 
 // 连接MySQL数据库
 MYSQL* connectMySQL()
