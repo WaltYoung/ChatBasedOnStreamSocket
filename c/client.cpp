@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
+#include <algorithm>
+#include <utility>
 #include <errno.h>
 #include <unistd.h>
 #include <string.h>
@@ -55,6 +57,8 @@ void loginAck(Packet* packet);
 void logoutRequest(int sockfd);
 void logoutAck(Packet* packet);
 void addRequest(int sockfd);
+void addAck(int sockfd, Packet* packet);
+void ackAck(Packet* packet);
 const char* jsonToChar(const char* inputJson, const char* key, const char* value);
 void charToJson(const char* inputChar, const char* key, std::string* resultValue);
 void sendPacket(int sockfd, int type, char* sender, char* recver, char* message, int code=200);
@@ -136,6 +140,8 @@ void* sendThread(void* sockfd)
 	std::string cmdline;
 	while( std::cin >> cmdline )
 	{
+		if( !strcmp(cmdline.c_str(),"") )
+			continue;
 		if( !strcmp(cmdline.c_str(),"exit") )
 		{
 			close(*(int*)sockfd);
@@ -160,6 +166,9 @@ void* sendThread(void* sockfd)
 		case 4:
 			addRequest(*(int*)sockfd);
 			break;
+		case 5:
+			pass();
+			break;
 		default:
 			break;
 		}
@@ -175,9 +184,9 @@ void* recvThread(void* sockfd)
 	{
 //		sem_wait(&sem);//等待信号量
 		int len;
-		pthread_mutex_lock(&A_LOCK);
-		len=(int)recv( (*(int*)sockfd), (char*)&packet, sizeof(packet), 0);
-		pthread_mutex_unlock(&A_LOCK);
+//		pthread_mutex_lock(&A_LOCK);
+		len=(int)recv( (*(int*)sockfd), (char*)&packet, sizeof(packet), 0);//接收不上锁
+//		pthread_mutex_unlock(&A_LOCK);
 		if(len <= 0)
 		{
 //			fprintf(stderr,"Receive error: %s\n",strerror(errno) );
@@ -199,6 +208,12 @@ void* recvThread(void* sockfd)
 		case 3:
 			logoutAck(&packet);
 			printf("Please input command:");
+			break;
+		case 4:
+			addAck(*(int*)sockfd, &packet);
+			break;
+		case 5:
+			ackAck(&packet);
 			break;
 		default:
 			break;
@@ -282,10 +297,34 @@ void logoutAck(Packet* packet)
 void addRequest(int sockfd)
 {
 	char otherID[IDLEN];
+	printf("Please input user id:");
 	scanf("%s",otherID);
 	char message[BUFLEN];
 	memset(message,0,BUFLEN);//以0填充
-	sendPacket(sockfd, Logout, userID, otherID, (char*)message);
+	sendPacket(sockfd, Add, userID, otherID, (char*)message);
+}
+
+void addAck(int sockfd, Packet* packet)
+{
+	printf("%s apply to add friends with you (y or n)", packet->message);
+	char message[BUFLEN];
+	memset(message,0,BUFLEN);//以0填充
+	char answer;
+	scanf("%c",&answer);
+	if(answer == 'y')
+		sendPacket(sockfd, Ack, packet->recver, packet->sender, (char*)message);
+	else
+		sendPacket(sockfd, Ack, packet->recver, packet->sender, (char*)message, USERIDNOTACCESS);
+}
+
+void ackAck(Packet* packet)
+{
+	if(packet->code == USERIDNOTFOUND)
+		std::cout << "Userid not found" << std::endl;
+	else if(packet->code == USERIDNOTACCESS)
+		std::cout << "User not access" << std::endl;
+	else
+		std::cout << "User access" << std::endl;
 }
 
 const char* jsonToChar(const char* inputJson, const char* key, const char* value)
@@ -312,7 +351,9 @@ void sendPacket(int sockfd, int type, char* sender, char* recver, char* message,
 	strcpy(packet.recver,recver);
 	packet.code=htonl(code);
 	strcpy(packet.message,message);
-	send(sockfd, (char*)&packet, sizeof(packet), 0);
+	pthread_mutex_lock(&A_LOCK);
+	send(sockfd, (char*)&packet, sizeof(packet), 0);//发送上锁
+	pthread_mutex_unlock(&A_LOCK);
 }
 
 void help()

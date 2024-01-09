@@ -7,7 +7,19 @@
 
 ## 编译方法
 
-`makefile`文件所在目录，使用命令`make`即可编译得到文件
+1. 安装 MySQL ，并配置 MySQL
+
+```bash
+sudo apt-get install mysql-server
+```
+
+2. 安装 MySQL C API
+
+```bash
+sudo apt-get install libmysqlclient-dev
+```
+
+3. `makefile`文件所在目录，使用命令`make`即可编译得到文件
 
 ## 特性
 
@@ -15,13 +27,20 @@
 
 ## 数据库设计命令
 
-### 创建basic表
+### 创建chat数据库
+
+```sql
+CREATE DATABASE IF NOT EXISTS `chat` DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+USE `chat`;
+```
+
+### 创建basic表(基础信息表)
 
 表中含有userid、username、password、online字段。
 
 **userid为主键。**
 
-userid、username、password字段都是varchar 8位类型，online为bool类型
+userid、username、password字段都是varchar 8位类型，online为bool类型。
 
 ```sql
 CREATE TABLE basic (

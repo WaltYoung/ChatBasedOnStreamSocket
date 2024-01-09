@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
+#include <algorithm>
+#include <utility>
 #include <errno.h>
 #include <unistd.h>
 #include <string.h>
@@ -49,6 +51,7 @@ void regisResponce(int sockfd, Packet* packet);
 void loginResponce(int sockfd, Packet* packet);
 void logoutResponce(int sockfd, Packet* packet);
 void addForward(int sockfd, Packet* packet);
+void ackForward(int sockfd, Packet* packet);
 MYSQL* connectMySQL();
 void insertData(MYSQL* con, std::string tableName, std::string columnName,const std::string data);
 
@@ -147,7 +150,9 @@ void* server(void* sockfd)
 	while(1)
 	{
 		int len;
-		len=(int)recv( (*(int*)sockfd), (char*)&packet, sizeof(packet), 0);
+//		pthread_mutex_lock(&A_LOCK);
+		len=(int)recv( (*(int*)sockfd), (char*)&packet, sizeof(packet), 0);//接收不上锁
+//		pthread_mutex_unlock(&A_LOCK);
 		if(len <= 0)
 		{
 //			fprintf(stderr,"Receive error: %s\n",strerror(errno) );
@@ -169,6 +174,9 @@ void* server(void* sockfd)
 			break;
 		case 4:
 			addForward(*(int*)sockfd, &packet);
+			break;
+		case 5:
+			ackForward(*(int*)sockfd, &packet);
 			break;
 		default:
 			break;
@@ -219,6 +227,7 @@ void loginResponce(int sockfd, Packet* packet)
 	charToJson( (const char*)packet->message, "userid", &userid);
 	charToJson( (const char*)packet->message, "password", &password);
 	useridToSockfd[userid]=sockfd;//套接字与userid绑定
+//	std::cout << userid << password << std:endl;
 	std::string columnName="userid, password";
 	std::string tableName="basic";
 	std::vector< std::vector<std::string> > results;
@@ -259,7 +268,40 @@ void logoutResponce(int sockfd, Packet* packet)
 }
 
 void addForward(int sockfd, Packet* packet)
-{}
+{
+	std::vector< std::vector<std::string> > results;
+	queryData( connectMySQL(), "userid, username", "basic", results);
+	int row=results.size();//多行
+	int line=results[row-1].size();//一列
+	char message[BUFLEN];
+	memset(message,0,BUFLEN);
+	for (int i = 0; i < row; i++)
+		for (int j = 0; j < line - 1; j++)//仅遍历第一列userid
+			if( !strcmp(results[i][j].c_str(), (const char*)packet->sender) )//ID存在
+			{
+				strcpy(message, results[i][j+1].c_str());//message存储username
+				return sendPacket(useridToSockfd[packet->recver], Ack, packet->sender, packet->recver, message);
+			}
+	return sendPacket(sockfd, Ack, serverID, packet->sender, message, USERIDNOTFOUND);//未找到被申请方的userid则告知申请方
+}
+
+void ackForward(int sockfd, Packet* packet)
+{
+	char message[BUFLEN];
+	memset(message,0,BUFLEN);
+	sendPacket(useridToSockfd[packet->recver], Ack, packet->sender, packet->recver, message, packet->code);
+	//插入新的好友关系
+	std::string tableName="friends";
+	std::string columnName="friend_id_1, friend_id_2";
+	int userid_1=atoi(packet->sender);
+	int userid_2=atoi(packet->recver);
+	if(userid_2 > userid_1)
+		std::swap(userid_1, userid_2);// C++98定义在<algorithm>;C++11起改为定义在<utility>
+	std::string friend_id_1=std::to_string(userid_1);
+	std::string friend_id_2=std::to_string(userid_2);
+	std::string data="'" + friend_id_1 + "', '" + friend_id_2 + "'";
+	insertData( connectMySQL(), tableName, columnName, data);
+}
 
 // 连接MySQL数据库
 MYSQL* connectMySQL()
@@ -270,7 +312,7 @@ MYSQL* connectMySQL()
 		std::cerr << "Init error: " << mysql_error(con) << std::endl;
 		return nullptr;//任何情况下都表示空指针
 	}
-	if (mysql_real_connect(con, "127.0.0.1", "root", "root", "chat", 3306, NULL, 0) == NULL)//用户名为root，密码为root
+	if (mysql_real_connect(con, "127.0.0.1", "root", "root", "chat", 3306, NULL, 0) == NULL)//用户名为root，密码为root，数据库为chat
 	{
 		std::cerr << "Connect error: " << mysql_error(con) << std::endl;
 		return nullptr;
@@ -375,7 +417,9 @@ void sendPacket(int sockfd, int type, char* sender, char* recver, char* message,
 	strcpy(packet.recver,recver);
 	packet.code=htonl(code);
 	strcpy(packet.message,message);
-	send(sockfd, (char*)&packet, sizeof(packet), 0);
+	pthread_mutex_lock(&A_LOCK);
+	send(sockfd, (char*)&packet, sizeof(packet), 0);//发送上锁
+	pthread_mutex_unlock(&A_LOCK);
 }
 
 void* command(void* none)
